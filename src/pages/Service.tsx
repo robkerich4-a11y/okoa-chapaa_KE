@@ -1,8 +1,8 @@
-#import { useState, useEffect } from "react";
-#import { useNavigate } from "react-router-dom";
-#import { Zap, CheckCircle, Loader2, Smartphone, Home } from "lucide-react";
-#import { toast } from "sonner";
-#import { Button } from "@/components/ui/button";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { Zap, CheckCircle, Loader2, Smartphone, Home } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 
 const BACKEND_URL = "https://okoa-chapaa-backend.onrender.com";
 
