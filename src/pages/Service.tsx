@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Zap, CheckCircle, Loader2, Smartphone, Home } from "lucide-react";
+import {
+  Zap,
+  CheckCircle,
+  Loader2,
+  Smartphone,
+  Home,
+  Copy,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
@@ -17,10 +24,16 @@ interface LoanData {
 
 type PaymentStatus = "idle" | "initiating" | "pending" | "success" | "failed";
 
+const TILL_NUMBER = "5284116";
+const RECEIVER_NAME = "gedion kipkoech";
+
 const Service = () => {
   const navigate = useNavigate();
   const [loanData, setLoanData] = useState<LoanData | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("idle");
+
+  const [manualFlow, setManualFlow] = useState(false);
+  const [mpesaMessage, setMpesaMessage] = useState("");
 
   useEffect(() => {
     const data = sessionStorage.getItem("myLoan");
@@ -72,7 +85,6 @@ const Service = () => {
       });
 
       const data = await response.json();
-      console.log("STK Push response:", data);
 
       if (!response.ok) {
         throw new Error(data.error || "Failed to initiate STK push");
@@ -81,12 +93,44 @@ const Service = () => {
       setPaymentStatus("pending");
       toast.success("Check your phone for the M-Pesa prompt!");
     } catch (err) {
-      console.error(err);
       setPaymentStatus("failed");
-      toast.error(
-        err instanceof Error ? err.message : "Payment initiation failed"
-      );
+      toast.error("STK failed. Use Till option instead.");
+      setManualFlow(true);
     }
+  };
+
+  /* ================= VALIDATION ================= */
+
+  const validateMpesaMessage = () => {
+    if (!loanData) return false;
+
+    const msg = mpesaMessage.toLowerCase();
+
+    const amountMatch = msg.includes(
+      loanData.processing_fee.toString()
+    );
+
+    const nameParts = RECEIVER_NAME.split(" ");
+    const nameMatch = nameParts.every((part) => msg.includes(part));
+
+    if (amountMatch && nameMatch) {
+      setPaymentStatus("success");
+      toast.success("Payment verified successfully!");
+
+      setTimeout(() => {
+        navigate("/dashboard");
+      }, 2000);
+
+      return true;
+    }
+
+    toast.error("Message does not match payment details.");
+    return false;
+  };
+
+  const copyTill = () => {
+    navigator.clipboard.writeText(TILL_NUMBER);
+    toast.success("Till number copied!");
   };
 
   if (!loanData) {
@@ -99,17 +143,13 @@ const Service = () => {
 
   const totalRepayment = Math.round(loanData.loan_amount * 1.1);
 
-  /* ================= STATUS OVERLAY ================= */
+  /* ================= OVERLAY ================= */
 
   if (
     paymentStatus === "initiating" ||
     paymentStatus === "pending" ||
     paymentStatus === "success"
   ) {
-    const handleGoBack = () => {
-      setPaymentStatus("idle");
-    };
-
     return (
       <div className="fixed inset-0 bg-background/95 z-50 flex flex-col items-center justify-center p-6 text-center">
         {paymentStatus === "initiating" && (
@@ -123,26 +163,14 @@ const Service = () => {
           <>
             <Smartphone className="w-14 h-14 text-primary mb-4 animate-bounce" />
             <p className="text-xl font-semibold">Check your phone</p>
-            <p className="text-muted-foreground mt-2">
-              Enter your M-Pesa PIN to complete payment
-            </p>
-            <div className="flex gap-3 mt-6">
-              <Button
-                variant="outline"
-                onClick={handleGoBack}
-                className="gap-2"
-              >
-                <Home className="w-4 h-4" />
-                Go Back
-              </Button>
-              <Button
-                onClick={initiateSTKPush}
-                className="gap-2"
-              >
-                <Smartphone className="w-4 h-4" />
-                Retry
-              </Button>
-            </div>
+
+            <Button
+              variant="outline"
+              onClick={() => setManualFlow(true)}
+              className="mt-6"
+            >
+              STK Delayed? Use Till Instead
+            </Button>
           </>
         )}
 
@@ -150,9 +178,6 @@ const Service = () => {
           <>
             <CheckCircle className="w-16 h-16 text-primary mb-4" />
             <p className="text-xl font-semibold">Payment successful</p>
-            <p className="text-muted-foreground mt-2">
-              Redirecting to dashboard…
-            </p>
           </>
         )}
       </div>
@@ -169,39 +194,53 @@ const Service = () => {
             <Zap className="w-7 h-7" />
             Okoa Chapaa
           </div>
-          <p className="text-muted-foreground">
-            Pay processing fee to receive your loan
-          </p>
         </div>
 
         <div className="bg-card rounded-2xl p-6 shadow border">
-          <div className="space-y-3 mb-6">
-            <Row label="Applicant" value={loanData.name} />
-            <Row label="Phone" value={loanData.phone_number} />
-            <Row label="Loan Amount" value={formatCurrency(loanData.loan_amount)} />
-            <Row label="Processing Fee" value={formatCurrency(loanData.processing_fee)} />
-            <Row label="Repayment" value={formatCurrency(totalRepayment)} />
-          </div>
-
-          <div className="bg-accent/50 rounded-xl p-4 mb-6 text-center">
-            <p className="text-sm text-muted-foreground">Amount to Pay</p>
-            <p className="text-3xl font-bold text-primary">
-              {formatCurrency(loanData.processing_fee)}
-            </p>
-          </div>
+          <Row label="Applicant" value={loanData.name} />
+          <Row label="Amount" value={formatCurrency(loanData.processing_fee)} />
 
           <Button
             onClick={initiateSTKPush}
-            className="w-full py-6 text-lg gap-2 rounded-xl"
+            className="w-full mt-6 py-6 text-lg"
           >
-            <Smartphone className="w-5 h-5" />
             Pay with M-Pesa
           </Button>
 
-          {paymentStatus === "failed" && (
-            <p className="text-center text-destructive mt-4">
-              Payment failed. Please try again.
-            </p>
+          {/* ================= MANUAL FLOW ================= */}
+
+          {manualFlow && (
+            <div className="mt-6 space-y-4 border-t pt-6">
+              <p className="font-semibold text-center">
+                Pay via Till Number
+              </p>
+
+              <div className="flex items-center justify-between bg-accent p-3 rounded-xl">
+                <span className="font-bold text-lg">{TILL_NUMBER}</span>
+                <Button size="sm" onClick={copyTill}>
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+
+              <p className="text-sm text-muted-foreground text-center">
+                Go to M-Pesa → Lipa na M-Pesa → Buy Goods → Enter Till Number
+              </p>
+
+              <textarea
+                placeholder="Paste M-Pesa message here..."
+                className="w-full border rounded-xl p-3 text-sm"
+                rows={4}
+                value={mpesaMessage}
+                onChange={(e) => setMpesaMessage(e.target.value)}
+              />
+
+              <Button
+                onClick={validateMpesaMessage}
+                className="w-full"
+              >
+                Confirm Payment
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -210,7 +249,7 @@ const Service = () => {
 };
 
 const Row = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex justify-between">
+  <div className="flex justify-between py-1">
     <span className="text-muted-foreground">{label}</span>
     <span className="font-semibold">{value}</span>
   </div>
